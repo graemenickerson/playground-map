@@ -55,6 +55,45 @@ Request or transform coordinates into WGS84 longitude/latitude for GeoJSON. Pres
 
 Imports should be repeatable, use stable identifiers, preserve curated overrides, and flag removed or changed source records for review. Run imports manually during phase 1; scheduling is deferred.
 
+### Source identity and application categories
+
+Preserve municipal layer IDs as source metadata, not application categories
+or Mapbox display-layer identifiers.
+
+Raw source records live in source_features and include:
+
+- _id: application-generated UUID v4 string.
+- provider: source organization, initially city_of_victoria.
+- sourceService: stable service key, initially parks.
+- datasetType: application category, initially equipment or parks.
+- layerId: original municipal layer ID.
+- recordId: original source record ID, stored as a string.
+- attributes: original source properties.
+- geometry: GeoJSON in WGS84, or null when unavailable.
+- importedAt: timezone-aware retrieval timestamp.
+
+Source configuration maps each provider/service to its API URL and maps
+application dataset categories to municipal layer IDs. For Victoria's
+parks service, equipment maps to 20 and parks maps to 50.
+
+Identify source records uniquely by:
+provider + sourceService + layerId + recordId.
+
+datasetType describes the record; it is not part of its source identity.
+Generate UUIDs only on insertion and preserve them during repeat imports.
+
+Normalize source records into application playground documents separately.
+Frontend behavior uses application fields; Mapbox display layers use our
+own names, such as playground-pins and park-outlines.
+
+During this early development reset, update the model, database validator,
+unique index, and importer before dropping playground_app. Then rerun
+db/init.js and the importer. Do not delete other databases or Docker volumes.
+
+Current source findings: the equipment import contains 194 asset records,
+not 194 playgrounds. EquipmentType is empty throughout the inspected data,
+so equipment-type filters require additional evidence.
+
 ## MongoDB design
 
 Start with a playgrounds collection containing one document per playground:
@@ -72,6 +111,8 @@ Separate parks or shared amenity collections may be useful after inspecting the 
 
 ### Proposed document structure — for discussion
 
+- source_features: original municipal records with source identity,
+  application dataset category, geometry, and import timestamp.
 - playgrounds: one application-owned document per playground, with a stable ID, park summary/reference, GeoJSON location, embedded equipment, amenity summaries, and source metadata.
 - parks: park names, source identifiers, and boundary polygons if needed for import grouping and map outlines.
 - corrections: deferred to phase 2; separate records rather than a growing array inside each playground.
@@ -86,17 +127,17 @@ Queries to explore: proximity ordered by distance, playground points within the 
 
 ### Playground document v1 — proposed contract
 
-One document represents one physical playground, not one park or one equipment asset. The following is fictional sample data in MongoDB shell notation; timestamps are BSON dates and the identifier is an application-generated ObjectId.
+One document represents one physical playground, not one park or one equipment asset. The following is fictional sample data in MongoDB shell notation; timestamps are BSON dates and application identifiers are UUID v4 strings.
 
 ```js
 {
-  _id: ObjectId("507f1f77bcf86cd799439011"),
+  _id: "daaf12af-fcce-4703-8503-f81175bac281",
   schemaVersion: 1,
   name: "Example Playground",
   municipality: "Victoria",
   description: null,
   park: {
-    id: ObjectId("507f1f77bcf86cd799439012"),
+    id: "387ac2e8-726c-4bfa-ae42-a735e92b694a",
     name: "Example Park"
   },
   location: {
@@ -127,12 +168,16 @@ One document represents one physical playground, not one park or one equipment a
     {
       ref: "city-equipment-example-001",
       provider: "city_of_victoria",
+      sourceService: "parks",
+      datasetType: "equipment",
       layerId: 20,
       recordId: "example-equipment-001"
     },
     {
       ref: "city-park-example-001",
       provider: "city_of_victoria",
+      sourceService: "parks",
+      datasetType: "parks",
       layerId: 50,
       recordId: "example-park-001"
     }
@@ -144,7 +189,7 @@ One document represents one physical playground, not one park or one equipment a
 
 | Property | Shape | Purpose and rule |
 | --- | --- | --- |
-| _id | ObjectId | Stable application identity; retain across imports rather than generating a new ID each time. |
+| _id | UUID v4 string | Stable application identity; retain across imports rather than generating a new ID each time. |
 | schemaVersion | Integer | Identifies this document contract as the structure evolves. |
 | name | Non-empty string | Display name; derived names must be distinguishable from official names during import preparation. |
 | municipality | String | Municipality name, initially Victoria. |
@@ -165,7 +210,9 @@ Equipment types will be normalized after inspecting source values; use unknown f
 
 The sample represents effective browseable values. Before supporting curated edits, define separate imported values and overrides so reimporting cannot erase reviewed changes. Playground grouping needs a stable mapping to application IDs; equipment record IDs alone are not playground IDs.
 
-Validate required properties, status/context enums, coordinate ranges, and referenced source entries during import. Use database schema validation for structure and types. The API will serialize ObjectId values as strings and dates as ISO timestamps.
+Validate required properties, UUIDs, status/context enums, coordinate ranges,
+and referenced source entries during import. Use database schema validation
+for structure and types. IDs remain strings; serialize dates as ISO timestamps.
 
 ## Flask API
 
@@ -200,7 +247,10 @@ Static types help check application code during development. Runtime validators 
 
 ### Database documents and API contracts
 
-Keep persistence and API models explicit. MongoDB stores ObjectId and BSON date values; JSON responses expose string IDs and ISO timestamps. Define a conversion layer and validate the resulting response against the API model. List and detail endpoints may expose different fields.
+Keep persistence and API models explicit. Application IDs are UUID strings
+in both MongoDB and JSON responses. MongoDB stores BSON dates; JSON exposes
+ISO timestamps. Define a conversion layer and validate the resulting response
+against the API model. List and detail endpoints may expose different fields.
 
 Start with explicit Pydantic and Zod schemas rather than introducing schema generation. Keep their API field names, enums, nullability, and required properties aligned. Use shared valid and invalid response fixtures and meaningful contract checks to detect drift, including ID/date serialization. Explore generation only if maintaining the contracts becomes burdensome.
 
@@ -224,7 +274,10 @@ Application and database processes will run locally. Mapbox and source-data impo
 
 ## Working approach
 
-Use the IDE's file-editing and diff review workflow for proposed project changes. Do not use shell scripts to create or rewrite project source files. Import tooling is application functionality and will be implemented as reviewable source files.
+Propose one file at a time. Show complete new files or complete proposed diffs
+inline in chat before writing them, and wait for approval. IDE pre-write diff
+display is not guaranteed by this integration. Apply approved changes with
+the file-editing tool rather than shell scripts.
 
 ## Implementation sequence
 

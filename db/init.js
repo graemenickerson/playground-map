@@ -107,6 +107,10 @@ const playgroundValidator = {
         bsonType: ["string", "null"],
         minLength: 1
       },
+      siteType: {
+        bsonType: "string",
+        enum: ["park", "popup", "school", "unknown"]
+      },
       location: {
         bsonType: "object",
         additionalProperties: false,

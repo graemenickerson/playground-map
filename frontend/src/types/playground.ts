@@ -1,8 +1,18 @@
 import { z } from "zod";
 
+export const SiteTypeSchema = z.enum([
+  "park",
+  "popup",
+  "school",
+  "unknown",
+]);
+
+export type SiteType = z.infer<typeof SiteTypeSchema>;
+
 export const PlaygroundSchema = z.object({
   _id: z.string().uuid(),
   name: z.string().min(1).nullable(),
+  siteType: SiteTypeSchema,
   location: z.object({
     type: z.literal("Point"),
     coordinates: z.tuple([

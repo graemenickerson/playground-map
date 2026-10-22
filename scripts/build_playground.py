@@ -4,10 +4,14 @@ Accepts equipment UUIDs from source_features, an optional park UUID, and
 an optional display name. Validates the selected records and checks that
 equipment lies within the park when one is supplied.
 
-Rejects selections where any equipment pair is more than 50 metres apart.
+Rejects selections where any equipment pair exceeds the maximum spread.
+The default is 50 metres; reviewed groups can supply a different limit
+when calling build_playground.
 Uses the average equipment coordinates as an approximate playground pin.
 Prints JSON to stdout and logs to stderr. Preview is the default.
 Pass --save to insert the playground into MongoDB.
+Site type defaults to park when a park is supplied, otherwise unknown.
+Use --site-type to explicitly select park, popup, school, or unknown.
 Equipment already assigned to a playground cannot be reused.
 Each successful build generates a new playground UUID.
 
@@ -28,7 +32,7 @@ from itertools import combinations
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
-from backend.playground_models import Playground, Point
+from backend.playground_models import Playground, Point, SiteType
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +82,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Save the validated playground; otherwise only print JSON.",
     )
+    parser.add_argument(
+        "--site-type",
+        choices=[category.value for category in SiteType],
+        help="Optional category; defaults to park with --park-id, otherwise unknown.",
+    )
     return parser.parse_args()
 
 
@@ -86,7 +95,20 @@ def build_playground(
     equipment_ids: list[str],
     park_id: str | None,
     name: str | None,
+    site_type: SiteType | None = None,
+    *,
+    max_equipment_distance_metres: float = MAX_EQUIPMENT_DISTANCE_METRES,
 ) -> Playground:
+    if (
+        isinstance(max_equipment_distance_metres, bool)
+        or not isinstance(max_equipment_distance_metres, (int, float))
+        or not math.isfinite(max_equipment_distance_metres)
+        or max_equipment_distance_metres <= 0
+    ):
+        raise ValueError(
+            "Maximum equipment distance must be a positive finite number"
+        )
+
     if not equipment_ids:
         raise ValueError("At least one equipment ID is required")
 
@@ -143,11 +165,12 @@ def build_playground(
     for first, second in combinations(range(len(points)), 2):
         distance = distance_metres(points[first], points[second])
 
-        if distance > MAX_EQUIPMENT_DISTANCE_METRES:
+        if distance > max_equipment_distance_metres:
             raise ValueError(
                 f"Equipment {equipment[first]['_id']} and "
                 f"{equipment[second]['_id']} are {distance:.2f} metres "
-                "apart; maximum allowed distance is 50 metres"
+                f"apart; maximum allowed distance is "
+                f"{max_equipment_distance_metres:g} metres"
             )
 
     location = Point(coordinates=[
@@ -160,6 +183,11 @@ def build_playground(
 
     return Playground(
         name=name,
+        siteType=(
+            site_type
+            if site_type is not None
+            else SiteType.PARK if park is not None else SiteType.UNKNOWN
+        ),
         location=location,
         parkSourceId=park_id,
         equipmentSourceIds=sorted(equipment_ids),
@@ -218,6 +246,11 @@ def main() -> None:
                 arguments.equipment_ids,
                 arguments.park_id,
                 arguments.name,
+                site_type=(
+                    SiteType(arguments.site_type)
+                    if arguments.site_type is not None
+                    else None
+                ),
             )
 
             check_equipment_available(

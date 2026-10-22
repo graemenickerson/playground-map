@@ -1,0 +1,31 @@
+[
+  {
+    "name": "Beacon Hill Park - 1",
+    "siteType": "park",
+    "parkSourceId": "6f1afe4d-e944-4be1-8392-acb56c7241c1",
+    "equipmentSourceIds": [
+      "226b9ab3-8ea2-4002-a7f2-ce7b66fe9d8b",
+      "5eee85ab-3a16-4b93-ac91-7978c958107c",
+      "63787914-2c1c-4300-80db-fb1a3d6275ae",
+      "814ae335-a085-4b47-843e-13b738377f68",
+      "9d81518e-3ce5-4f80-a129-056dea615c76",
+      "b371bdb7-d14f-40fc-a615-103098bacfe5",
+      "bf801360-b5c5-4d5d-bf90-b6862cf00029",
+      "e1c372f8-b94a-499a-8e8d-1cb8fecd87e3",
+      "e2e68d00-4b54-4d06-acbe-04909b9eaa9b",
+      "fcf0dcc1-8206-422d-9e0f-ca6bcd87f542"
+    ],
+    "maxEquipmentDistanceMetres": 60,
+    "reviewNote": "Visually reviewed: these equipment points belong to one playground."
+  },
+  {
+    "name": null,
+    "siteType": "unknown",
+    "parkSourceId": null,
+    "equipmentSourceIds": [
+      "eda4fe50-0ba5-4604-945c-dc63ab48a470",
+      "94d0f86a-94db-4451-8d9a-0bebb7e0e706"
+    ],
+    "reviewNote": "Reviewed by the user: one playground on former school grounds."
+  }
+]

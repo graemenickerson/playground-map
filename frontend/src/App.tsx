@@ -1,23 +1,38 @@
 import { useEffect, useState } from "react";
 import PlaygroundMap from "./components/PlaygroundMap";
+import PlaygroundSearch from "./components/PlaygroundSearch";
+import "./components/PlaygroundSearch.css";
 import {
   EquipmentReviewListSchema,
   type EquipmentReview,
 } from "./types/equipment-review";
 import {
   PlaygroundListSchema,
+  type Playground,
+  type PlaygroundFilters,
   type PlaygroundList,
 } from "./types/playground";
 
-type LoadState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; data: PlaygroundList };
+const EMPTY_PLAYGROUNDS: Playground[] = [];
+
+type LoadState = {
+  data: PlaygroundList | null;
+  isLoading: boolean;
+  error: string | null;
+};
 
 export default function App() {
   const [state, setState] = useState<LoadState>({
-    status: "loading",
+    data: null,
+    isLoading: true,
+    error: null,
   });
+  const [appliedFilters, setAppliedFilters] =
+    useState<PlaygroundFilters>({
+      q: "",
+      age: null,
+      washroom: false,
+    });
   const [reviewEquipment, setReviewEquipment] = useState<
     EquipmentReview[]
   >([]);
@@ -26,9 +41,32 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
 
+    setState((previous) => ({
+      ...previous,
+      isLoading: true,
+      error: null,
+    }));
+
     async function loadPlaygrounds() {
       try {
-        const response = await fetch("/api/playgrounds", {
+        const parameters = new URLSearchParams();
+
+        if (appliedFilters.q) {
+          parameters.set("q", appliedFilters.q);
+        }
+        if (appliedFilters.age !== null) {
+          parameters.set("age", String(appliedFilters.age));
+        }
+        if (appliedFilters.washroom) {
+          parameters.set("washroom", "true");
+        }
+
+        const queryString = parameters.toString();
+        const url = queryString
+          ? `/api/playgrounds?${queryString}`
+          : "/api/playgrounds";
+
+        const response = await fetch(url, {
           signal: controller.signal,
         });
 
@@ -40,7 +78,7 @@ export default function App() {
         const data = PlaygroundListSchema.parse(raw);
 
         if (!controller.signal.aborted) {
-          setState({ status: "ready", data });
+          setState({ data, isLoading: false, error: null });
         }
       } catch (error) {
         if (controller.signal.aborted) {
@@ -48,17 +86,18 @@ export default function App() {
         }
 
         console.error("Could not load playgrounds", error);
-        setState({
-          status: "error",
-          message: "Could not load playgrounds. Check that Flask is running.",
-        });
+        setState((previous) => ({
+          ...previous,
+          isLoading: false,
+          error: "Could not load playgrounds. Please try searching again.",
+        }));
       }
     }
 
     void loadPlaygrounds();
 
     return () => controller.abort();
-  }, []);
+  }, [appliedFilters]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -98,43 +137,69 @@ export default function App() {
     return () => controller.abort();
   }, []);
 
+  const playgrounds = state.data?.items ?? EMPTY_PLAYGROUNDS;
+  const count = playgrounds.length;
+
+  let resultSummary: string;
+
+  if (state.isLoading) {
+    resultSummary = state.data
+      ? "Updating results…"
+      : "Loading playgrounds…";
+  } else if (state.error) {
+    resultSummary = state.data
+      ? `Showing previous results (${count}).`
+      : "No results loaded.";
+  } else if (state.data?.hasMore) {
+    resultSummary = `Showing the first ${count} matching playgrounds.`;
+  } else {
+    resultSummary =
+      `${count} ${count === 1 ? "playground" : "playgrounds"} found.`;
+  }
+
+  function clearFilters() {
+    setAppliedFilters({
+      q: "",
+      age: null,
+      washroom: false,
+    });
+  }
+
   return (
     <main>
       <h1>Victoria playgrounds</h1>
 
-      {state.status === "loading" && (
-        <p role="status">Loading playgrounds…</p>
-      )}
+      <div className="playground-explorer">
+        <PlaygroundMap
+          playgrounds={playgrounds}
+          reviewEquipment={reviewEquipment}
+        />
 
-      {state.status === "error" && (
-        <p role="alert">{state.message}</p>
-      )}
+        <PlaygroundSearch
+          onSearch={setAppliedFilters}
+          onClear={clearFilters}
+          isLoading={state.isLoading}
+          resultSummary={resultSummary}
+          error={state.error}
+        />
+      </div>
 
-      {state.status === "ready" && (
-        <>
-          <PlaygroundMap
-            playgrounds={state.data.items}
-            reviewEquipment={reviewEquipment}
-          />
+      {reviewError && <p role="alert">{reviewError}</p>}
 
-          {reviewError && <p role="alert">{reviewError}</p>}
-
-          {state.data.items.length === 0 ? (
-            <p>No playgrounds have been added yet.</p>
+      {state.data && (
+        <section aria-label="Matching playgrounds">
+          {count === 0 ? (
+            <p>No playgrounds match these filters.</p>
           ) : (
             <ul>
-              {state.data.items.map((playground) => (
+              {playgrounds.map((playground) => (
                 <li key={playground._id}>
                   {playground.name ?? "Unnamed playground"}
                 </li>
               ))}
             </ul>
           )}
-
-          {state.data.hasMore && (
-            <p>Showing the first {state.data.items.length} playgrounds.</p>
-          )}
-        </>
+        </section>
       )}
     </main>
   );

@@ -42,6 +42,8 @@ export default function PlaygroundMap({
   reviewEquipment = EMPTY_REVIEW,
 }: PlaygroundMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<mapboxgl.Map | undefined>(undefined);
+  const hasFittedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,34 +69,35 @@ export default function PlaygroundMap({
 
     const pointCount = playgrounds.length + reviewPoints.length;
 
-    let map: mapboxgl.Map | undefined;
+    let map = mapRef.current;
+    const markers: mapboxgl.Marker[] = [];
 
     try {
       setError(null);
 
-      map = new mapboxgl.Map({
-        container,
-        accessToken: token,
-        style: "mapbox://styles/mapbox/streets-v12",
-        center:
-          playgrounds[0]?.location.coordinates ??
-          reviewPoints[0]?.coordinates ??
-          [-123.3656, 48.4284],
-        zoom: pointCount > 0 ? 16 : 12,
-      });
+      if (!map) {
+        map = new mapboxgl.Map({
+          container,
+          accessToken: token,
+          style: "mapbox://styles/mapbox/streets-v12",
+          center: [-123.3656, 48.4284],
+          zoom: 12,
+        });
+        mapRef.current = map;
 
-      map.addControl(new mapboxgl.NavigationControl());
+        map.addControl(new mapboxgl.NavigationControl());
 
-      map.on("error", () => {
-        setError("The map could not be loaded.");
-      });
+        map.on("error", () => {
+          setError("The map could not be loaded.");
+        });
+      }
 
       const bounds = new mapboxgl.LngLatBounds();
 
       for (const playground of playgrounds) {
         const coordinates = playground.location.coordinates;
 
-        new mapboxgl.Marker({
+        const marker = new mapboxgl.Marker({
           color: PIN_COLOURS[playground.siteType],
         })
           .setLngLat(coordinates)
@@ -107,6 +110,7 @@ export default function PlaygroundMap({
           )
           .addTo(map);
 
+        markers.push(marker);
         bounds.extend(coordinates);
       }
 
@@ -120,30 +124,52 @@ export default function PlaygroundMap({
           .filter(Boolean)
           .join(" — ");
 
-        new mapboxgl.Marker({ color: "#dc2626" })
+        const marker = new mapboxgl.Marker({ color: "#dc2626" })
           .setLngLat(coordinates)
           .setPopup(new mapboxgl.Popup().setText(description))
           .addTo(map);
 
+        markers.push(marker);
         bounds.extend(coordinates);
       }
 
-      if (pointCount > 1) {
-        map.fitBounds(bounds, {
-          padding: 60,
-          maxZoom: 16,
-          duration: 0,
-        });
+      if (!hasFittedRef.current && playgrounds.length > 0) {
+        if (pointCount > 1) {
+          map.fitBounds(bounds, {
+            padding: 60,
+            maxZoom: 16,
+            duration: 0,
+          });
+        } else {
+          map.jumpTo({
+            center: playgrounds[0].location.coordinates,
+            zoom: 16,
+          });
+        }
+
+        hasFittedRef.current = true;
       }
     } catch (cause) {
       console.error("Could not initialize map", cause);
       map?.remove();
       map = undefined;
+      mapRef.current = undefined;
+      hasFittedRef.current = false;
       setError("The map could not be loaded.");
     }
 
-    return () => map?.remove();
+    return () => {
+      markers.forEach((marker) => marker.remove());
+    };
   }, [playgrounds, reviewEquipment]);
+
+  useEffect(() => {
+    return () => {
+      mapRef.current?.remove();
+      mapRef.current = undefined;
+      hasFittedRef.current = false;
+    };
+  }, []);
 
   return (
     <section aria-label="Playground map">

@@ -13,6 +13,7 @@ from pymongo.errors import ConnectionFailure
 from werkzeug.exceptions import HTTPException
 
 from backend.playground_models import Playground
+from backend.playground_queries import build_playground_filter
 from backend.request_models import parse_playground_list_query
 
 
@@ -48,7 +49,9 @@ def create_app() -> Flask:
         except ValidationError:
             return error_response(
                 "invalid_request",
-                "Only 'limit' is supported; it must be between 1 and 500.",
+                "Supported parameters: q (up to 100 characters), "
+                "age ('2-5' or '5-12'), washroom ('true' or 'false'), "
+                "and limit (integer 1–500).",
                 400,
             )
         except ValueError as error:
@@ -58,8 +61,13 @@ def create_app() -> Flask:
                 400,
             )
 
+        playground_filter = build_playground_filter(
+            database.source_features,
+            query,
+        )
+
         documents = list(
-            database.playgrounds.find({})
+            database.playgrounds.find(playground_filter)
             .sort("_id", 1)
             .limit(query.limit + 1)
             .max_time_ms(3000)
